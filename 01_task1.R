@@ -1,0 +1,234 @@
+# ANDREW SUMMITT
+# QUANTIUM TASK 1
+
+
+# Goals
+# - Understand the current purchasing trends and behaviors
+# - Analyze customer segments and purchasing behavior
+
+
+# STEPS
+# Start with objectives
+# Break the problem down
+# Write an outline
+# Look at data
+
+
+
+# 1.0 SET UP ----
+library(tidyverse)
+library(readxl)
+library(skimr)
+
+
+## 1.1 READ IN DATA ----
+behavior_tbl <- read_csv("00_data/QVI_purchase_behaviour.csv")
+transaction_tbl <- read_xlsx("00_data/QVI_transaction_data.xlsx")
+
+
+## 1.2 EXAMINE DATA ----
+# Behavior(Segments) - Card #, Age/Demographic, Membership Level
+behavior_tbl
+
+
+# Date, Store #, Product, Qty, Sales
+transaction_tbl
+
+
+## 1.3 EXPLORE & UNDERSTAND DATA ----
+
+# Behavior Info
+behavior_tbl                  # 70K customers
+behavior_tbl %>% glimpse()    # dbl, chr, chr
+behavior_tbl %>% skim()       # no missing data
+
+behavior_tbl %>%                  # not sure about factor
+    select(LIFESTAGE) %>% 
+    unique()
+
+behavior_tbl %>%                  # could be an ordered factor
+    select(PREMIUM_CUSTOMER) %>% 
+    unique()
+
+
+# Transaction Data
+transaction_tbl %>% count(duplicated(.))   # 1 duplicated row
+transaction_tbl %>% glimpse()     # 1 chr, 7 dbl
+transaction_tbl %>% skim()        # no missing data
+
+
+# How many unique stores, customers & products are there?
+
+transaction_tbl %>% 
+    select(STORE_NBR, LYLTY_CARD_NBR, TXN_ID, PROD_NBR) %>% 
+    map(~ unique(.) %>% length()) %>% 
+    as_tibble()
+
+
+# Are there multiple transactions for the same customers? - Yes
+transaction_tbl %>% 
+    filter(LYLTY_CARD_NBR == 1307)
+
+
+# Does TOT_SALES mean Price x Quantity? - Yes
+
+transaction_tbl %>% 
+    select(PROD_NBR, PROD_QTY, TOT_SALES) %>% 
+    mutate(UNIT_PRICE = TOT_SALES/PROD_QTY) %>% 
+    filter(PROD_NBR == 1)
+
+
+# What format is the date in? - Occurs in Year 2088?
+transaction_tbl %>% 
+    select(DATE) %>% 
+    mutate(DATE_FORMATTED = DATE %>% as_date()) %>% 
+    arrange(DATE)
+
+# What info does the PROD_NAME include? - Brand, Name, & Size
+transaction_tbl %>% 
+    select(PROD_NAME) %>% 
+    unique() %>% 
+    head(20)
+
+
+
+# 2.0 DATA CLEANING ----
+
+## 2.1 Adding Factors ----
+# Clean Factors Low to High Levels
+behavior_tbl_cleaned <- behavior_tbl %>% 
+    mutate(PREMIUM_CUSTOMER = PREMIUM_CUSTOMER %>% as.factor()) %>% 
+    mutate(LIFESTAGE        = LIFESTAGE %>% as_factor() %>% 
+            fct_relevel("YOUNG SINGLES/COUPLES",
+                        "YOUNG FAMILIES",
+                        "MIDAGE SINGLES/COUPLES",
+                        "NEW FAMILIES",
+                        "OLDER SINGLES/COUPLES",
+                        "OLDER FAMILIES",
+                        "RETIREES"
+            )
+    )
+
+behavior_tbl_cleaned
+
+
+# Change Formats & Add Unit Price
+transaction_cleaned_tbl <- transaction_tbl %>% 
+    mutate(DATE = DATE %>% as_date()) %>% 
+    mutate(UNIT_PRICE = TOT_SALES / PROD_QTY) %>% 
+    arrange(DATE) %>%                              # sort chronological
+    unique()                                       # remove one duplicated row
+
+
+transaction_cleaned_tbl %>% head(10)
+
+
+# 3.0 DATA PREPARATION ----
+# Pack size, brand name, define metrics
+
+
+transaction_prepared_tbl <- transaction_cleaned_tbl %>% 
+    
+    ## 3.1 EXTRACT PROD_WEIGHT ----
+    # Creates New Numeric Column
+    mutate(PROD_WEIGHT = parse_number(PROD_NAME)) %>% 
+    
+    ## Removes Weight Chr From Product Name
+    mutate(PROD_NAME = PROD_NAME %>% 
+               str_replace_all("[0-9]", "") %>% 
+               str_replace(" g", "") %>% 
+               str_replace(" G", "") %>% 
+               str_trim("right")) %>% 
+    
+    ## 3.2 EXTRACT BRAND ----
+    # Tokenize PROD_NAME
+    separate(
+        col = PROD_NAME,
+        into = str_c("NAME_", 1:8),
+        sep = " ",
+        remove = FALSE,
+        fill = "right"
+    ) %>% 
+    
+    # Fix Brand Typos
+    mutate(NAME_1 = case_when(
+        NAME_1 == "Smith" ~ "Smiths",
+        NAME_1 == "GrnWves" ~ "Grain",
+        NAME_1 == "NCC" ~ "Natural",
+        NAME_1 == "WW" ~ "Woolworths",
+        NAME_1 == "RRD" ~ "Red",
+        NAME_1 == "Snbts" ~ "Sunbites",
+        NAME_1 == "Dorito" ~ "Doritos",
+        NAME_1 == "Infzns" ~ "Infuzions",
+        TRUE ~ NAME_1)
+    ) %>% 
+    
+    # Set Brand to First Word Of PROD_NAME
+    mutate(PROD_BRAND = case_when(
+        
+        # Adjust for Brands with Two Word Names
+        str_detect(str_to_lower(NAME_1), "grain") ~ "Grain Waves",
+        str_detect(str_to_lower(NAME_1), "natural") ~ "Natrual ChipCo",
+        str_detect(str_to_lower(NAME_1), "french") ~ "French Fries",
+        str_detect(str_to_lower(NAME_1), "burger") ~ "Burger Ring",
+        
+        # Adjust for Brands with Three Word Names
+        str_detect(str_to_lower(NAME_1), "red") ~ "Red Rock Deli",
+        str_detect(str_to_lower(NAME_1), "old") ~ "Old El Paso",
+        TRUE ~ NAME_1
+        )
+    ) %>% 
+    
+    ## 3.3 UPDATE PRODUCT NAME ----
+    # Removes Brand for PROD_NAME
+    mutate(PROD_NAME = case_when(
+        
+        str_detect(PROD_NAME, pattern = "Smith")   ~ PROD_NAME %>% str_remove("Smiths") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "GrnWves") ~ PROD_NAME %>% str_remove("GrnWves") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "NCC")     ~ PROD_NAME %>% str_remove("NCC") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "WW")      ~ PROD_NAME %>% str_remove("WW") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "RRD")     ~ PROD_NAME %>% str_remove("RRD") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "Snbts")   ~ PROD_NAME %>% str_remove("Snbts") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "Dorito")  ~ PROD_NAME %>% str_remove("Doritos") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "Infzns")  ~ PROD_NAME %>% str_remove("Infzns") %>% str_trim("left"), 
+        str_detect(PROD_NAME, pattern = "Rings")   ~ PROD_NAME %>% str_remove("Burger Rings") %>% str_trim("left"), 
+               
+       TRUE ~ PROD_NAME %>% str_remove(PROD_BRAND) %>% str_trim("left"))
+    )%>% 
+    
+    # Removes Extra Spaces & Handles Cases of No Product Name
+    mutate(PROD_NAME = PROD_NAME %>% str_replace_all(" +", " "),
+           PROD_NAME = replace(PROD_NAME, PROD_NAME == "", "Not Specified")
+    ) %>% 
+    
+    ## 3.4 REMOVE EXTRA COLUMNS ----
+    select(DATE:PROD_NBR,PROD_BRAND, PROD_NAME, PROD_QTY:PROD_WEIGHT)
+
+
+
+transaction_prepared_tbl %>% select(PROD_NAME) %>% print(n = 50)
+transaction_prepared_tbl
+
+# 4.0 JOINING DATA ----
+
+behavior_transaction_tbl <- transaction_prepared_tbl %>% 
+    left_join(behavior_tbl_cleaned, by = "LYLTY_CARD_NBR") %>% 
+    glimpse()
+
+
+# 5.0 DATA SUMMARIES ----
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
