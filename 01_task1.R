@@ -19,6 +19,7 @@
 library(tidyverse)
 library(readxl)
 library(skimr)
+library(tidyquant)
 
 
 ## 1.1 READ IN DATA ----
@@ -216,19 +217,135 @@ behavior_transaction_tbl <- transaction_prepared_tbl %>%
     glimpse()
 
 
+
 # 5.0 DATA SUMMARIES ----
+behavior_transaction_tbl
+
+
+## 5.1 Sales over Time ----
+
+revenue_by_month_tbl <- behavior_transaction_tbl %>% 
+    
+    # Aggregate Dates
+    select(DATE, TOT_SALES) %>% 
+    mutate(YEAR_MONTH = floor_date(DATE, "months")) %>% 
+    
+    # Summarize Total Sales
+    group_by(YEAR_MONTH) %>% 
+    summarize(SALES = sum(TOT_SALES)) %>% 
+    ungroup() %>% 
+    
+    # Filter to Exclude Incomplete Months
+    filter(YEAR_MONTH < "2089-07-01" %>% ymd())
+    
+
+revenue_by_month_tbl %>%   
+    
+    # Plot
+    ggplot(aes(YEAR_MONTH, SALES)) +
+    geom_point() +
+    geom_line() +
+    
+    # Format
+    scale_y_continuous(labels = scales::dollar_format()) +
+    scale_x_date(date_labels = "%b", date_breaks = "1 month") +
+    # theme(axis.text.x = element_text(angle = 45)) +
+    labs(
+        title    = "Revenue by Month",
+        subtitle = "Jul 2088 - Jun 2089",
+        x        = "",
+        y        = "Sales"
+    ) +
+    theme_bw()
+
+
+behavior_transaction_tbl %>% glimpse()
+
+## 5.2 Sales by Brand ----
+brand_tbl <- behavior_transaction_tbl %>% 
+    group_by(PROD_BRAND) %>% 
+    summarize(SALES = sum(TOT_SALES)) %>% 
+    ungroup() %>% 
+    arrange(desc(SALES)) %>% 
+    mutate(PROD_BRAND = PROD_BRAND %>% as_factor() %>% fct_rev())
+
+
+brand_tbl %>% 
+    
+    # Plot
+    ggplot(aes(SALES, PROD_BRAND)) +
+    geom_col(aes(y = PROD_BRAND)) +
+    
+    # Format
+    scale_x_continuous(labels = scales::dollar_format()) +
+    labs(
+        title = "Total Sales by Brand",
+        x = "",
+        y = "Brand"
+    ) + 
+    theme_bw() +
+    theme(plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"))
 
 
 
+## 5.3 Customers by Membership Tier ----
+membership_tbl <- behavior_transaction_tbl %>% 
+    
+    # Aggregate by Tier
+    group_by(PREMIUM_CUSTOMER) %>% 
+    summarize(count = n()) %>% 
+    ungroup()
+
+    
+membership_tbl %>% 
+    
+    # Plot
+    ggplot(aes(count, PREMIUM_CUSTOMER)) +
+    geom_col(aes(x = PREMIUM_CUSTOMER, y = count)) +
+    
+    # Format
+    scale_y_continuous(labels = scales::comma_format()) +
+    labs(
+        title = "Customers by Membership Tier",
+        x = "Tier",
+        y = ""
+    ) +
+    theme_bw()
+    # theme(legend.position = "none") +
+    # scale_fill_brewer(palette = "YlGnBu")
+    
 
 
+## 5.4 Total Sales By Membership Tier ----
+membership_sales_tbl <- behavior_transaction_tbl %>% 
+    group_by(PREMIUM_CUSTOMER) %>% 
+    summarize(SALES = sum(TOT_SALES)) %>% 
+    ungroup()
+
+membership_sales_tbl %>% 
+    
+    # Plot
+    ggplot(aes(PREMIUM_CUSTOMER, SALES)) +
+    geom_col() +
+    
+    scale_y_continuous(labels = scales::dollar_format()) +
+    labs(
+        title = "Sales by Membership Tier",
+        caption = "Q: What discounts are available to premium members?",
+        x = "",
+        y = ""
+    ) +
+    theme_bw()
+    
 
 
+# Do Premium Members buy more? Which Kinds?
+# Stacked Bar chart?
+behavior_transaction_tbl
 
 
+# Which stores have the most premium members?
 
-
-
-
+# Count of Premium Members over Time? - How is it changing?
 
 
