@@ -20,6 +20,7 @@ library(tidyverse)
 library(readxl)
 library(skimr)
 library(tidyquant)
+library(rcartocolor)
 
 
 ## 1.1 READ IN DATA ----
@@ -256,7 +257,8 @@ revenue_by_month_tbl %>%
         x        = "",
         y        = "Sales"
     ) +
-    theme_bw()
+    theme_bw() +
+    scale_color_tq()
 
 
 behavior_transaction_tbl %>% glimpse()
@@ -268,12 +270,13 @@ brand_tbl <- behavior_transaction_tbl %>%
     ungroup() %>% 
     arrange(desc(SALES)) %>% 
     mutate(PROD_BRAND = PROD_BRAND %>% as_factor() %>% fct_rev())
+  
 
 
 brand_tbl %>% 
     
     # Plot
-    ggplot(aes(SALES, PROD_BRAND)) +
+    ggplot(aes(SALES, PROD_BRAND, fill = PROD_BRAND)) +
     geom_col(aes(y = PROD_BRAND)) +
     
     # Format
@@ -284,7 +287,10 @@ brand_tbl %>%
         y = "Brand"
     ) + 
     theme_bw() +
-    theme(plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"))
+    # scale_fill_carto_d(direction = -1) +
+    theme(plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+          legend.position = "none")
+    
 
 
 
@@ -301,7 +307,7 @@ membership_tbl %>%
     
     # Plot
     ggplot(aes(count, PREMIUM_CUSTOMER)) +
-    geom_col(aes(x = PREMIUM_CUSTOMER, y = count)) +
+    geom_col(aes(x = PREMIUM_CUSTOMER, y = count, fill = PREMIUM_CUSTOMER)) +
     
     # Format
     scale_y_continuous(labels = scales::comma_format()) +
@@ -310,9 +316,9 @@ membership_tbl %>%
         x = "Tier",
         y = ""
     ) +
-    theme_bw()
-    # theme(legend.position = "none") +
-    # scale_fill_brewer(palette = "YlGnBu")
+    # scale_fill_tq(theme = "green") +
+    theme_bw() +
+    theme(legend.position = "none")
     
 
 
@@ -325,7 +331,7 @@ membership_sales_tbl <- behavior_transaction_tbl %>%
 membership_sales_tbl %>% 
     
     # Plot
-    ggplot(aes(PREMIUM_CUSTOMER, SALES)) +
+    ggplot(aes(PREMIUM_CUSTOMER, SALES, fill = PREMIUM_CUSTOMER)) +
     geom_col() +
     
     scale_y_continuous(labels = scales::dollar_format()) +
@@ -335,16 +341,74 @@ membership_sales_tbl %>%
         x = "",
         y = ""
     ) +
-    theme_bw()
+    # scale_fill_tq(theme = "green") +
+    theme_bw() +
+    theme(legend.position = "none")
     
 
 
 # Do Premium Members buy more? Which Kinds?
+
 # Stacked Bar chart?
-behavior_transaction_tbl
+cust_brand_tbl <- behavior_transaction_tbl %>% 
+    
+    # Group & Summarize
+    group_by(PREMIUM_CUSTOMER, PROD_BRAND) %>% 
+    summarize(quantity = sum(PROD_QTY)) %>% 
+    ungroup() %>% 
+    
+    # Arrange
+    arrange(desc(quantity), PROD_BRAND) %>%
+    mutate(PREMIUM_CUSTOMER = PREMIUM_CUSTOMER %>% as_factor() %>% fct_rev()) %>% 
+    mutate(PROD_BRAND = PROD_BRAND %>% as_factor() %>% fct_rev())
+
+cust_brand_tbl %>%     
+    # Plot
+    ggplot(aes(quantity, PROD_BRAND, fill = PREMIUM_CUSTOMER)) +
+    geom_col() +
+    
+    # Format
+    theme_bw() +
+    theme(legend.position = "bottom") +
+    labs(title = "Brand by Customer Tier",
+         x = "Sales", 
+         y = "Brand")
+
 
 
 # Which stores have the most premium members?
+cust_store_tbl <- behavior_transaction_tbl %>% 
+    group_by(STORE_NBR) %>% 
+    summarize(total = n(),
+              budget = sum(PREMIUM_CUSTOMER == "Budget"),
+              mainstream = sum(PREMIUM_CUSTOMER == "Mainstream"),
+              premium = sum(PREMIUM_CUSTOMER == "Premium")) %>% 
+    ungroup() %>% 
+    arrange(desc(total)) %>%
+    mutate(STORE_NBR = STORE_NBR %>% as.character() %>% as_factor()) %>% 
+    slice(1:20)
+
+
+cust_store_tbl %>% 
+    pivot_longer(cols = c(budget, mainstream, premium),
+                 names_to = "tier",
+                 values_to = "amount") %>% 
+    
+    mutate(tier = tier %>% as_factor() %>% fct_rev()) %>% 
+    
+    ggplot(aes(STORE_NBR, total)) +
+    geom_col(aes(fill = tier)) +
+    
+    theme_bw() +
+    theme(legend.position = "bottom") +
+    labs(
+        title = "Top Stores by Tier",
+        x = "Store Number",
+        y = "Customers",
+        fill = "Tier",
+        caption = "A: Indicates evenly distributed membership types"
+    )
+
 
 # Count of Premium Members over Time? - How is it changing?
 
